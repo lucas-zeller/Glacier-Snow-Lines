@@ -24,8 +24,9 @@ import numpy as np
 #%%
 '''USER DEFINED VARIABLES'''
 run_id_export = 0
-run_scl_export = 1 # this isn't working with landsat collection 2 currently
-save_metadata = 1
+run_scl_export = 0 # this isn't working with landsat collection 2 currently
+run_cloudprob_export = 0
+save_metadata = 0
 
 date_start = '2021-01-01'
 date_end = '2021-12-31'
@@ -43,7 +44,7 @@ regions_override = [10]
 asset_rgi01_Alaska = ee.FeatureCollection('projects/lzeller/assets/01_rgi60_Alaska')
 
 # option to subset to only some
-# asset_rgi01_Alaska = asset_rgi01_Alaska.filter(ee.Filter.eq('Name','Wolverine Glacier'))
+asset_rgi01_Alaska = asset_rgi01_Alaska.filter(ee.Filter.eq('Name','Wolverine Glacier'))
 
 # simple outline
 asset_simpleoutline = ee.FeatureCollection('projects/lzeller/assets/AGVAsimplearea')  # eventually redo this to be areas within 5km of rgi outlines >0.5km
@@ -153,7 +154,7 @@ asset_subregions = asset_subregions.map( lambda f : redraw_boundary(f))
     
 # iterate through each sensing orbit number, sending them off to be analyzed
 sons = [43,143]
-sons=[43]
+sons=[143]
 c=0
 for sensing_orbit_number in sons:
     c+=1
@@ -165,7 +166,7 @@ for sensing_orbit_number in sons:
     print()
     print(f"{sensing_orbit_number}   {c} of {len(sons)}")
     
-    # Load image collection which we will want to classify, filtering by cloud cover
+    # Load image collection which we will want to classify
     S2_images = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
                       .filterDate(date_start, date_end) # filter by date range
                       .filterBounds(asset_simpleoutline)
@@ -312,11 +313,11 @@ for sensing_orbit_number in sons:
         
             # clip to this geometry
             regional_clipped_image = single_image.clip(region).unmask(99) 
-
-            # clip to rgi
-            # I don't see any reason to do this, so let's not watse compute resources
-            # regional_clipped_image = regional_clipped_image.clipToCollection(asset_rgi01_Alaska).unmask(98)
             
+            # or do we want to clip to rgi
+            # regional_clipped_image = single_image.unmask(99)
+            # regional_clipped_image = regional_clipped_image.clipToCollection(asset_rgi01_Alaska.filterBounds(region)).unmask(99)
+
             # export the image to drive
             task = ee.batch.Export.image.toDrive(
                 image = regional_clipped_image, #regional_clipped_image,

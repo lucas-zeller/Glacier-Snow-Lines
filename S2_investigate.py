@@ -33,6 +33,14 @@ path_rgi = os.path.join(folder_AGVA, 'RGI', "01_rgi60_Alaska", "01_rgi60_Alaska.
 rgi_gdf = gpd.read_file(path_rgi)
 
 #%%
+# # count glacier larger than 0.5, 1.0
+# temp = rgi_gdf[rgi_gdf['Area']>=0.5]
+# print(f"greater than 0.5: {len(temp)}")
+
+# temp = rgi_gdf[rgi_gdf['Area']>=1.0]
+# print(f"greater than 0.5: {len(temp)}")
+
+#%%
 # subset rgi to single outline
 rgi_single = rgi_gdf[rgi_gdf['Name']=='Wolverine Glacier'].to_crs("EPSG:3338")
 single_geometry = rgi_single.geometry

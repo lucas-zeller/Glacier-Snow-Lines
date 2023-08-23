@@ -136,6 +136,10 @@ axs.axis('equal')
 # lets grab the classification from a single day and try to get an ela from that
 single_day = snow.sel(time="2021-09-11")
 
+to_show = xr.where(glacier_mask==1, single_day, np.nan)
+fig, axs=plt.subplots()
+to_show.plot(ax=axs)
+
 # lets get the minimum and maximum elevation on the glacier
 z_min = np.nanmin(xr_dem)
 z_max = np.nanmax(xr_dem)

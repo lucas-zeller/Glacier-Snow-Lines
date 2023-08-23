@@ -111,7 +111,7 @@ for i in range(0, len(names)):
     
     # export the image to drive
     task = ee.batch.Export.image.toDrive(
-        image = clipped_dem, #regional_clipped_image,
+        image = clipped_dem.resample('bilinear'), #regional_clipped_image,
         region = region.bounds(), # region.bounds()
         folder = folder30,
         scale = 30,

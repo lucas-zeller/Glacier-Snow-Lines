@@ -1,0 +1,24 @@
+<VRTDataset rasterXSize="423" rasterYSize="994">
+  <SRS dataAxisToSRSAxisMapping="1,2">PROJCS["NAD83 / Alaska Albers",GEOGCS["NAD83",DATUM["North_American_Datum_1983",SPHEROID["GRS 1980",6378137,298.257222101,AUTHORITY["EPSG","7019"]],AUTHORITY["EPSG","6269"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4269"]],PROJECTION["Albers_Conic_Equal_Area"],PARAMETER["latitude_of_center",50],PARAMETER["longitude_of_center",-154],PARAMETER["standard_parallel_1",55],PARAMETER["standard_parallel_2",65],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","3338"]]</SRS>
+  <GeoTransform> -3.1569428100387851e+05,  1.0015484322380057e+02,  0.0000000000000000e+00,  1.1788783103962867e+06,  0.0000000000000000e+00, -1.0015484322380057e+02</GeoTransform>
+  <VRTRasterBand dataType="Float32" band="1">
+    <NoDataValue>-9999</NoDataValue>
+    <ColorInterp>Gray</ColorInterp>
+    <ComplexSource>
+      <SourceFilename relativeToVRT="0">C:\Users\lzell\OneDrive - Colostate\Desktop\AGVA\DEMs\Hugonnet_thinning\Alaska Albers\01_02_rgi60_2015-01-01_2020-01-01\dhdt\N59W160_2015-01-01_2020-01-01_dhdt.tif</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SourceProperties RasterXSize="383" RasterYSize="466" DataType="Float32" BlockXSize="383" BlockYSize="5" />
+      <SrcRect xOff="0" yOff="0" xSize="383" ySize="466" />
+      <DstRect xOff="0" yOff="527.894226306046" xSize="382.866432222075" ySize="465.837486724509" />
+      <NODATA>-9999</NODATA>
+    </ComplexSource>
+    <ComplexSource>
+      <SourceFilename relativeToVRT="0">C:\Users\lzell\OneDrive - Colostate\Desktop\AGVA\DEMs\Hugonnet_thinning\Alaska Albers\01_02_rgi60_2015-01-01_2020-01-01\dhdt\N60W160_2015-01-01_2020-01-01_dhdt.tif</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SourceProperties RasterXSize="390" RasterYSize="564" DataType="Float32" BlockXSize="390" BlockYSize="5" />
+      <SrcRect xOff="0" yOff="0" xSize="390" ySize="564" />
+      <DstRect xOff="32.4503987259035" yOff="0" xSize="390.136008964466" ySize="564.196689887075" />
+      <NODATA>-9999</NODATA>
+    </ComplexSource>
+  </VRTRasterBand>
+</VRTDataset>
