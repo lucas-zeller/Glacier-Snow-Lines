@@ -41,8 +41,8 @@ merge_dtis = 0
 asset_rgi01_Alaska = ee.FeatureCollection('projects/lzeller/assets/01_rgi60_Alaska')
 
 # option to subset to only some
-asset_rgi01_Alaska = asset_rgi01_Alaska.filter(ee.Filter.eq('Name','Gulkana Glacier'))
-asset_rgi01_Alaska_1km = asset_rgi01_Alaska.filter(ee.Filter.gte('Area',1))
+asset_rgi01_Alaska = asset_rgi01_Alaska.filter(ee.Filter.inList('Name',['Wolverine Glacier', 'Gulkana Glacier']))
+asset_rgi01_Alaska_1km = asset_rgi01_Alaska.filter(ee.Filter.gte('Area',5))
 
 # simple outline
 asset_simpleoutline = ee.FeatureCollection('projects/lzeller/assets/AGVAsimplearea')  # eventually redo this to be areas within 5km of rgi outlines >0.5km
@@ -190,8 +190,8 @@ for i in range(0, len(rgi_names)):
     description_cloud = f'S2_{rgi_name}_{date_start}_{date_end}_{merge_dtis}_cloud'
     description_scl = f'S2_{rgi_name}_{date_start}_{date_end}_{merge_dtis}_scl'
     folder_img = 'S2_Classified_Raw'
-    folder_scl = 'S2_Cloud_Raw'
-    folder_cloudsprobs = 'S2_CloudProb_Raw'
+    folder_cloud = 'S2_Cloud_Raw'
+    folder_scl = 'S2_SCL_Raw'
     
     # Load image collection which we will want to classify
     # S2_images = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
@@ -345,12 +345,12 @@ for i in range(0, len(rgi_names)):
         task = ee.batch.Export.image.toDrive(
             image = single_image, #regional_clipped_image,
             region = rgi_i.geometry(), # region.bounds()
-            folder = folder_cloudsprobs,
+            folder = folder_cloud,
             scale = 10,
             maxPixels = int(1e13),
             crs = 'EPSG:3338',
             crsTransform = [10,0,0,0,-10,0],
-            description = description_scl,
+            description = description_cloud,
             skipEmptyTiles = True
             )
         
