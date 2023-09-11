@@ -12,7 +12,8 @@ from scipy.ndimage import uniform_filter, map_coordinates, convolve, binary_fill
 from xml.dom import minidom
 import matplotlib.pyplot as plt
 
-
+def test():
+    print('test')
 
 def extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5):
     '''
@@ -35,6 +36,7 @@ def extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5
         elevations where the snow and ice fraction are equal. the ELA/SLA.
 
     '''
+
     # extract the day/time for each obs
     times = xr_class_map.time.values
     
@@ -50,7 +52,7 @@ def extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5
     # get the min, max of each elevation band
     z_mins =  np.arange( np.ceil(z_min/step)*step-(step*width), np.ceil(z_max/step)*step, step)
     z_maxs =  z_mins+(step*width)
-
+    
     ### now reclassify dem into these bands, labeled 1,2,3,... 
     dem = xr_dem.copy()
     for i in range(len(z_mins)):
@@ -61,9 +63,15 @@ def extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5
     
     # we need to rename the dem 'time' dimension to not be 'time' for this
     dem = dem.rename({'time':'time2'})
+#     print(dem.shape)
+#     print(xr_class_map.shape)
     
+    print(1)
+    ## looks like this line is the main bottleneck in this function 
     # # for each band value in dem, we want to count the number of snow pixels in each time step
     df_grouped_snow = xr.Dataset({'dem': dem, 'class': xr_class_map}).to_dataframe().groupby(['dem','time']).agg({"class": "sum"}).reset_index()
+    
+    print(2)
     
     # now count number of total pixels within each band
     df_grouped_total = []
@@ -101,9 +109,6 @@ def extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5
         snow_fractions.append(snow_frac)
         
     snow_fractions = np.array(snow_fractions).T
-   
-    # plt.figure()
-    # plt.imshow(snow_fractions)
     
     ### now lets find the elevation(s) where the snow fraction crosses 0.5, for each time step
     sf_centered = snow_fractions-p_snow #center around 0.5
@@ -134,76 +139,74 @@ def extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5
     # append together, sort by time, and return
     all_elas = pd.concat([z_crossing, z_zero], ignore_index=True)#.sort_values('time')
     
-    # for dates where there are no elas found, decide if ela is above glacier (9999) or below (0)
-    last_elas = []
-    for d in times:
-        
-        # count number of ela obs on this date, if zero, go to next
-        num_obs = len(all_elas[all_elas['time']==d])
-        if num_obs>0:
-            continue
-        
-        # else decide if ela should be 0 or 9999, based on total snow fraction on glacier surface
-        else:
-            # get the observation from this date, count snow, divide by glacier area
-            snow_c = xr_class_map.sel(time=d).sum()
-            snow_frac = snow_c/xr_mask.sum()
-            
-            if snow_frac>0.5:
-                last_elas.append([d,-1])
-            else:
-                last_elas.append([d,9999])
+    glacier_pixels = xr_mask.sum().values
     
-    # format to df, append, return
-    last_elas = pd.DataFrame(last_elas, columns=['time','z'])
-    all_elas = pd.concat([all_elas, last_elas], ignore_index=True)#.sort_values('time')
+    ### for dates where no ela is found, we assume it is above or below glacier elevation. decide which one.
+    # first, find which dates these are
+    bad_times = []
+    for d in times:
+        if len(all_elas[all_elas['time']==d])==0:
+            bad_times.append(d)
+    
+    # then, for each of those dates, see if there is > or < 50% snow
+    snow_fracs = xr_class_map.sel(time=bad_times).sum(dim=['x','y'], skipna=True)/glacier_pixels
+    
+    print(3)
+    
+    # for snow_fracs>0.5, make it 9999, otherwise -1
+    snow_fracs = xr.where(snow_fracs>0.5, -1, 9999)
+    last_elas = pd.DataFrame({'time':snow_fracs.time, 'z':snow_fracs.values})
+    # last_elas = snow_fracs.to_dataframe()
+    # print(last_elas)
+    all_elas = pd.concat([all_elas, last_elas], ignore_index=True)
+    print(4)
     
     return all_elas
 
 
-def choose_one_ELA(xr_class_map, xr_dem, df_elas):
+def choose_one_ELA(xr_snow, xr_dem, xr_mask, df_elas):
     
-    # calculate the aar for each date
-    area = xr_class_map.max(dim='time').sum()
-    aars = xr_class_map.sum(dim=('y','x'))/area
+    print(5)
+    ### 5-6 is the biggest bottleneck here
     
-    # for each AAR, get the "ideal" ela
-    elevations = xr_dem.values.flatten()
-    elevations = elevations[elevations>0]
+    # calculate the aar for each date, from the snow distribution
+    glacier_pixels = xr_mask.sum().values # total number of pixels on the glacier 
+    aars = xr_snow.sum(dim=('y','x'))/((xr_snow.notnull()).sum(dim=['x','y'])) # percentage of pixels which are snow in each time step
+    
+    # for each  AAR, get the "ideal" ela
+#     elevations = xr_dem.where(xr_mask>0, np.nan).dropna().values.flatten()
+    elevations = xr_dem.where(xr_mask>0, np.nan).values.ravel()
+    elevations = elevations[~np.isnan(elevations)]
+    print(5.1)
+#     elevations = elevations[elevations>0]
     elas = np.percentile(elevations, (1-aars.values)*100)
+    print(5.2)
+    # make df for date, observed aar, and the ideal ela given the observed aar
+    df_results = pd.DataFrame({'time':xr_snow.time, 'aar':aars, 'ela_ideal':elas})
     
-    # make df for date, aar, ela
-    df_ideal = pd.DataFrame({'time':xr_class_map.time, 'aar':aars, 'ela':elas})
+    print(6)
     
-    ### for obs in df_elas with multiple ela estimations, pick the best one
-    # first initiate a df with unique dates
-    unique_dates = pd.DataFrame(df_elas['time'].drop_duplicates())
+    # Group df_elas by "time" and aggregate the "z" values into lists
+    elas_grouped = df_elas.groupby("time")["z"].agg(list).reset_index()
+
+    # Merge df_ideal and elas_grouped on the "time" column
+    df_results = df_results.merge(elas_grouped, on="time", how="left")
+    ### now we have a column in df_ideal ("z") that has a list of all elas observed on this date
     
-    # now for each date, select best ELA
-    list_best = []
-    def best_choice(row):
-        
-        # see how many obs there are on this date
-        all_obs = df_elas[df_elas['time'] == row['time']]
-        
-        if len(all_obs)==1:
-            return all_obs['z'].values[0] # if only one ela, then that's the best
-        else:
-            options = all_obs['z'].values # get all our ela options
-            ideal = df_ideal[df_ideal['time']==row['time']]['ela'].values[0] # get the 'ideal' ela
-            
-            # return the option that is closest to ideal
-            return options[(np.abs(options - ideal)).argmin()]
-        
-    unique_dates['ela'] = unique_dates.apply(best_choice, axis=1, raw=False, result_type='expand')
+    # Custom function to find the closest value in a list
+    def find_closest_value(z_list, ela_ideal_value):
+        return min(z_list, key=lambda x: abs(x - ela_ideal_value))
+
+    # Apply the custom function to find the closest "z" value for each row
+    df_results["ela"] = df_results.apply(lambda row: find_closest_value(row["z"], row["ela_ideal"]), axis=1)
     
-    return unique_dates
+    return df_results
 
 
 # wrap the above two functions into a single call
 def get_the_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5):
     all_ELAs = extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=step, width=width, p_snow=p_snow)
-    best_ELAs = choose_one_ELA(xr_class_map, xr_dem, all_ELAs).sort_values('time')
+    best_ELAs = choose_one_ELA(xr_class_map, xr_dem, xr_mask, all_ELAs).sort_values('time')
     return best_ELAs
  
 
@@ -231,20 +234,74 @@ def idealized_ELA_AAR(xr_dem, xr_mask, step=0.01):
 def get_S2_subregion(rgi_geom):
     
     # open the s2 subregions shapefile
-    path_subregions = os.path.join('C:',os.sep,'Users','lzell','OneDrive - Colostate','Desktop',"AGVA","RGI","S2_subregions","subregions.shp")
+    path_subregions = os.path.join('C:',os.sep,'Users','lzell','OneDrive - Colostate', 'Desktop', "AGVA", "RGI", "S2_subregions", "subregions.shp")
     gdf_subregions = gpd.read_file(path_subregions).to_crs("EPSG:3338")
     
     # find the subregion that intersects the rgi_geom
-    correct_subregion = gdf_subregions[gdf_subregions['geometry'].contains(rgi_geom)]['id'].values[0]
+    correct_subregion = gdf_subregions[gdf_subregions['geometry'].contains(rgi_geom.values[0])]['id'].values[0]
     
     return correct_subregion
 
 
 
-def get_base_DEM(rgi_geom, subregion=-1):
+# get the dem of a glacier for a given year
+def get_year_DEM(single_geometry, year, subregion=-1):
+    
+    # find which subregion we're in
+    if subregion==-1:
+        subregion = get_S2_subregion(single_geometry)
+    
+    # set folder paths, etc...
+    folder_AGVA = os.path.join('C:',os.sep,'Users','lzell','OneDrive - Colostate','Desktop',"AGVA")
+    path_dem_base = os.path.join(folder_AGVA, "DEMs", '10m_COP_GLO30', f"region_{subregion:02d}_10m.tif")
+    path_dhdt_00_05 = os.path.join(folder_AGVA, 'DEMs', "10m_thinning", "01_02_rgi60_2000-01-01_2005-01-01", "dhdt", f"Region_{subregion:02d}.tif")
+    path_dhdt_05_10 = os.path.join(folder_AGVA, 'DEMs', "10m_thinning", "01_02_rgi60_2005-01-01_2010-01-01", "dhdt", f"Region_{subregion:02d}.tif")
+    path_dhdt_10_15 = os.path.join(folder_AGVA, 'DEMs', "10m_thinning", "01_02_rgi60_2010-01-01_2015-01-01", "dhdt", f"Region_{subregion:02d}.tif")
+    path_dhdt_15_20 = os.path.join(folder_AGVA, 'DEMs', "10m_thinning", "01_02_rgi60_2015-01-01_2020-01-01", "dhdt", f"Region_{subregion:02d}.tif")
+    
+    # open the 2013 dem
+    dem_base = get_base_DEM(single_geometry, subregion=subregion)
+    
+    # function to open and clip with rioxarray
+    def open_xr(path):
+        xr_da = riox.open_rasterio(path).rio.clip(single_geometry, from_disk=True, drop=True)
+        return xr_da   
+   
+    # calculate numbers years off from 2013
+    dy = year-2013
+
+    # from this, calculate how much to multiply each of the dem products
+    # I can't explain in words how this work, but trust me that I thought through it and it is good
+    f10 = min( 2, max(dy,-3)) 
+    f15 = max( dy-f10, 0)
+    f05 = max( min(dy-f10,0), -5)
+    f00 = max( min(dy-f10-f05,0), -5)
+    
+    # open the dhdt products that are needed
+    dhdt_00_05 = open_xr(path_dhdt_00_05).rename({"band":"time"}) if f00 else 0
+    dhdt_05_10 = open_xr(path_dhdt_05_10).rename({"band":"time"}) if f05 else 0
+    dhdt_10_15 = open_xr(path_dhdt_10_15).rename({"band":"time"}) if f10 else 0
+    dhdt_15_20 = open_xr(path_dhdt_15_20).rename({"band":"time"}) if f15 else 0
+
+    #print(2000+i, dy, f"{f00}:{f05}:{f10}:{f15}")
+    dem_new = ((dem_base) + (dhdt_00_05*f00*10) + 
+                            (dhdt_05_10*f05*10) + 
+                            (dhdt_10_15*f10*10) + 
+                            (dhdt_15_20*f15*10)  ).astype(int)
+
+    # set the time variable
+    dem_new = dem_new#.rename({"band":"time"})
+    dem_new['time'] = pd.to_datetime([f"{year}-01-01"])
+    
+    return dem_base
+
+
+
+# get the base dem (2013)
+def get_base_DEM(single_geometry, subregion=-1):
     
     if subregion==-1:
-        subregion = get_S2_subregion(rgi_geom)
+        subregion = get_S2_subregion(single_geometry)
     
     # set folder paths, etc...
     folder_AGVA = os.path.join('C:',os.sep,'Users','lzell','OneDrive - Colostate','Desktop',"AGVA")
@@ -252,8 +309,10 @@ def get_base_DEM(rgi_geom, subregion=-1):
     
     # open base dem, each of the dhdt products
     def open_xr(path):
-        xr_da = riox.open_rasterio(path).rio.write_nodata(0)
-        xr_da = xr_da.rio.clip([rgi_geom], from_disk=True, drop=True)
+        # I can't recall why I was intent on using the write_nodata(0) call here, but it is causing errors in the array sizes (off by 1 at times) so I am removing it
+#         xr_da = riox.open_rasterio(path).rio.write_nodata(0)
+#         xr_da = xr_da.rio.clip(single_geometry, from_disk=True, drop=True)
+        xr_da = riox.open_rasterio(path).rio.clip(single_geometry, from_disk=True, drop=True)
         return xr_da 
     
     dem_base = open_xr(path_dem_base)/10 # divide by ten for scaling factor
