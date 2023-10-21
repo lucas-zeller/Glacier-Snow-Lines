@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import polars as pl
 import numpy as np
 import geopandas as gpd
 import rasterio as rio
@@ -11,6 +12,7 @@ from rasterio.windows import from_bounds, Window
 from scipy.ndimage import uniform_filter, map_coordinates, convolve, binary_fill_holes
 from xml.dom import minidom
 import matplotlib.pyplot as plt
+import time
 
 def test():
     print('test')
@@ -62,23 +64,90 @@ def extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5
     # ax.imshow(xr_dem[0])
     
     # we need to rename the dem 'time' dimension to not be 'time' for this
-    dem = dem.rename({'time':'time2'})
-#     print(dem.shape)
-#     print(xr_class_map.shape)
-    
-    print(1)
-    ## looks like this line is the main bottleneck in this function 
-    # # for each band value in dem, we want to count the number of snow pixels in each time step
-    df_grouped_snow = xr.Dataset({'dem': dem, 'class': xr_class_map}).to_dataframe().groupby(['dem','time']).agg({"class": "sum"}).reset_index()
-    
-    print(2)
-    
+    dem = dem.rename({'time':'time2'}).astype('uint16').load()#.chunk({'time':-1, 'y':50, 'x':50})
+
     # now count number of total pixels within each band
     df_grouped_total = []
     for i in range(len(z_mins)):
         count = np.nansum(xr.where(dem==i+1, 1, 0))
         df_grouped_total.append([i+1,count])
     df_grouped_total = pd.DataFrame(df_grouped_total, columns=['dem','count'])
+    
+#     print(dem.shape)
+#     print(xr_class_map.shape)
+    
+    ## looks like this line is the main bottleneck in this function 
+    # # for each band value in dem, we want to count the number of snow pixels in each time step
+   
+    polars = 0
+    daskk = 0
+    onebyone = 1
+    
+    # test using polars for this
+    if polars:
+        st = time.time()
+        # do the calculation
+        df_grouped_snow = ( pl.from_pandas( ( xr.Dataset({'dem': dem, 'class': xr_class_map})
+                                                   .to_dataframe()
+                                                   .reset_index(level='time', inplace=False)[['dem', 'time','class']] ))
+                              .groupby(['dem','time'])
+                              .agg(pl.sum('class'))#.alias('class_sum'))
+                          ).to_pandas()
+        et = time.time()
+        
+    elif daskk:
+        st = time.time()
+        # do the calculation
+        df_grouped_snow = ( xr.Dataset({'dem': dem, 'class': xr_class_map})
+                                  .to_dask_dataframe()
+                                  .groupby(['dem', 'time'])['class'].sum().reset_index()
+                          ).compute()
+        et = time.time()
+        
+    elif onebyone: 
+        st = time.time()
+        
+        # go through day by day and sum snow in each elevation band each day
+        df_grouped_snow = []
+        
+        for i in range(len(times)):
+            
+            # grab the obs on this date
+            t=times[i]
+            obs=xr_class_map.sel(time=t).load()
+            
+            # sum the number of snow pixels within each elevation band
+            sum_snow_today = ( xr.Dataset({'dem': dem, 'class': obs})
+                               .to_dataframe()
+                               .reset_index()[['dem','class']]
+                               .groupby(['dem'])
+                               .agg({"class": "sum"})
+                               .reset_index() )
+            
+            sum_snow_today['time']=t
+            
+            df_grouped_snow.append(sum_snow_today)
+            
+        df_grouped_snow = pd.concat(df_grouped_snow)
+
+        et = time.time()
+    
+    else:
+        st = time.time()
+        df_grouped_snow = ( xr.Dataset({'dem': dem, 'class': xr_class_map})
+                               .to_dataframe()
+                               .reset_index(level='time', inplace=False)[['dem', 'time','class']]
+                               .groupby(['dem','time'])
+                               .agg({"class": "sum"})
+                               .reset_index()
+                         ) 
+        et = time.time()
+     
+    # get the execution time
+#     elapsed_time = et - st
+#     print('Execution time:', elapsed_time, 'seconds')
+#     return df_grouped_snow
+    
     
     # drop zone 0 from both
     df_grouped_snow = df_grouped_snow[df_grouped_snow['dem']>0]
@@ -151,7 +220,7 @@ def extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5
     # then, for each of those dates, see if there is > or < 50% snow
     snow_fracs = xr_class_map.sel(time=bad_times).sum(dim=['x','y'], skipna=True)/glacier_pixels
     
-    print(3)
+#     print(3)
     
     # for snow_fracs>0.5, make it 9999, otherwise -1
     snow_fracs = xr.where(snow_fracs>0.5, -1, 9999)
@@ -159,14 +228,14 @@ def extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5
     # last_elas = snow_fracs.to_dataframe()
     # print(last_elas)
     all_elas = pd.concat([all_elas, last_elas], ignore_index=True)
-    print(4)
+#     print(4)
     
     return all_elas
 
 
 def choose_one_ELA(xr_snow, xr_dem, xr_mask, df_elas):
     
-    print(5)
+#     print(5)
     ### 5-6 is the biggest bottleneck here
     
     # calculate the aar for each date, from the snow distribution
@@ -177,20 +246,31 @@ def choose_one_ELA(xr_snow, xr_dem, xr_mask, df_elas):
 #     elevations = xr_dem.where(xr_mask>0, np.nan).dropna().values.flatten()
     elevations = xr_dem.where(xr_mask>0, np.nan).values.ravel()
     elevations = elevations[~np.isnan(elevations)]
-    print(5.1)
+#     print(5.1)
 #     elevations = elevations[elevations>0]
     elas = np.percentile(elevations, (1-aars.values)*100)
-    print(5.2)
+#     print(5.2)
     # make df for date, observed aar, and the ideal ela given the observed aar
     df_results = pd.DataFrame({'time':xr_snow.time, 'aar':aars, 'ela_ideal':elas})
     
-    print(6)
+#     print(6)
     
     # Group df_elas by "time" and aggregate the "z" values into lists
     elas_grouped = df_elas.groupby("time")["z"].agg(list).reset_index()
 
     # Merge df_ideal and elas_grouped on the "time" column
-    df_results = df_results.merge(elas_grouped, on="time", how="left")
+#     print(df_results['time'].dtype)
+#     print(elas_grouped['time'].dtype)
+#     print(elas_grouped)
+    
+    # sometimes we will have no 'good' observations for this year (idk why), so we need to return essentiall an empty df
+    if len(elas_grouped)>0:
+        df_results = df_results.merge(elas_grouped, on="time", how="left")
+    else:
+        return pd.DataFrame({'time':['1900-01-01'], 'aar':[0], 'ela_ideal':[9999], 'z':[-1], 'ela':[-1]})
+#         return print('huh')
+        
+    
     ### now we have a column in df_ideal ("z") that has a list of all elas observed on this date
     
     # Custom function to find the closest value in a list
@@ -199,7 +279,7 @@ def choose_one_ELA(xr_snow, xr_dem, xr_mask, df_elas):
 
     # Apply the custom function to find the closest "z" value for each row
     df_results["ela"] = df_results.apply(lambda row: find_closest_value(row["z"], row["ela_ideal"]), axis=1)
-    
+#     print(df_results)
     return df_results
 
 
@@ -207,8 +287,111 @@ def choose_one_ELA(xr_snow, xr_dem, xr_mask, df_elas):
 def get_the_ELAs(xr_class_map, xr_dem, xr_mask, step=20, width=1, p_snow=0.5):
     all_ELAs = extract_all_ELAs(xr_class_map, xr_dem, xr_mask, step=step, width=width, p_snow=p_snow)
     best_ELAs = choose_one_ELA(xr_class_map, xr_dem, xr_mask, all_ELAs).sort_values('time')
+#     print(best_ELAs)
     return best_ELAs
- 
+
+
+def extract_band_SCA(xr_class_map, xr_dem, xr_mask, step=10):
+    '''
+    Parameters
+    ----------
+    xr_class_map : xarray dataarray
+        2d dataarray showing the distribution of snow (1) and not-snow(0) at a single timestep.
+    xr_dem : xarray dataarray
+        2d dataarray, with identical size/shape to xr_class_map, showing elevation.
+    xr_mask : xarray dataarray
+        2d dataarray showing binary mask of glacier surface
+    step : int, optional
+        DESCRIPTION. The default is 10. The step size, in m, between zones
+
+    Returns
+    -------
+    list
+        elevations where the snow and ice fraction are equal. the ELA/SLA.
+
+    '''
+
+    # extract the day/time for each obs
+    times = xr_class_map.time.values
+    
+    # lets get the minimum and maximum elevation on the glacier
+    z_min = np.nanmin(xr_dem.where(xr_dem>0))
+    z_max = np.nanmax(xr_dem.where(xr_dem>0))
+
+    # get the centers of each elevation band
+    z_bands = np.arange( np.ceil(z_min/step)*step, np.ceil(z_max/step)*step-step, step) 
+    
+    # get the min, max of each elevation band
+    z_mins =  z_bands-(step/2)
+    z_maxs =  z_bands+(step/2)
+    
+    # clean up any outliers in the dem that are at the extremes outside of our bands
+    dem = xr_dem.copy()
+    dem = xr.where( dem>=z_maxs[-1], 0, dem)
+    dem = xr.where( dem<z_mins[0], 0, dem)
+    
+    ### now reclassify dem into these bands, labeled 1,2,3,... 
+    for i in range(len(z_mins)):
+        dem = xr.where( (dem>=z_mins[i]) & (dem<z_maxs[i]), i+1, dem )
+
+    # we need to rename the dem 'time' dimension to not be 'time' for this
+    dem = dem.rename({'time':'time2'}).astype('uint16').load()#.chunk({'time':-1, 'y':50, 'x':50})
+
+    # now count number of total pixels within each band (starting in band=1)
+    band_labels = []
+    total_pix_per_bands = []
+    for i in range(len(z_mins)):
+        count = np.nansum(xr.where(dem==i+1, 1, 0))
+        total_pix_per_bands.append(count)
+        band_labels.append(i+1)
+    
+    
+    ## for each band value in dem, we want to count the number of snow pixels in each time step
+    # go through day by day and sum snow in each elevation band each day
+    
+    # initialize df to hold results. make band_n the index
+    df_all_obs = pd.DataFrame({'band_n':band_labels, 'z_min':z_mins,'z_max':z_maxs, 'total_pixels':total_pix_per_bands}).set_index('band_n')
+
+    df_all_obs = [band_labels, z_mins, z_maxs, total_pix_per_bands]
+    df_all_obs = [pd.Series(z_mins, index=band_labels),
+                  pd.Series(z_maxs, index=band_labels), 
+                  pd.Series(total_pix_per_bands, index=band_labels)]
+    df_all_columns = ['z_min', 'z_max', 'total_pixels']
+    
+    for i in range(len(times)):
+#         if i>0: continue
+        # grab the obs on this date
+        t=times[i]
+        obs=xr_class_map.sel(time=t).load()
+
+        # sum the number of snow pixels within each elevation band
+        sum_snow_each_band = ( xr.Dataset({'dem': dem, 'class': obs})
+                           .to_dataframe()
+                           .reset_index()[['dem','class']]
+                           .groupby(['dem'])
+                           .agg({"class": "sum"})
+                           .reset_index() )
+            
+        # drop band 0 (this is off-glacier areas)
+        real_obs = sum_snow_each_band[sum_snow_each_band['dem']>0]
+        
+        # rename and format index
+        real_obs = real_obs.rename(columns={"dem":"band_n"}).set_index('band_n')['class']
+#         print(real_obs)
+        
+        # add to results df list
+        df_all_obs.append(real_obs)
+        df_all_columns.append(str(t)[:10])
+    
+    # format to dataframe (and transpose)
+    df_all_obs = pd.DataFrame(df_all_obs).T
+
+    # Set the column names
+    df_all_obs.columns = df_all_columns
+
+    # return
+    return df_all_obs
+    
 
 # function to get the "idealized" aar-ela relationship
 def idealized_ELA_AAR(xr_dem, xr_mask, step=0.01):

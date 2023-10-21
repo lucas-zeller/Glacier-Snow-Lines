@@ -45,10 +45,12 @@ asset_rgi01_Alaska = ee.FeatureCollection('projects/lzeller/assets/01_rgi60_Alas
 ### subset to the rgi outlines you want to use 
 # rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('Name',['Wolverine Glacier', 'Gulkana Glacier']))
 
-rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('O2Region',["2"])) #wolv=region4, gulk=region2
+# rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('O2Region',["2"])) #wolv=region4, gulk=region2, brooks=1, peninsula=3
+rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('O2Region',["2","5","6"])) # need meta for 2,5,6
 rgi_to_use = rgi_to_use.filter(ee.Filter.gte('Area',2))
 
 # rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.gte('Area',5))
+# rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('RGIId',['RGI60-01.15588']))
 
 print(len(rgi_to_use.aggregate_array('RGIId').getInfo()))
 rgi_to_use = rgi_to_use.sort('RGIId')
@@ -57,7 +59,7 @@ rgi_to_use = rgi_to_use.sort('RGIId')
 asset_simpleoutline = ee.FeatureCollection('projects/lzeller/assets/AGVAsimplearea')  # eventually redo this to be areas within 5km of rgi outlines >0.5km
 
 # subregion outlines
-asset_subregions = ee.FeatureCollection('projects/lzeller/assets/Alaska_RGI_Subregions')
+# asset_subregions = ee.FeatureCollection('projects/lzeller/assets/Alaska_RGI_Subregions')
 
 
 
@@ -173,7 +175,7 @@ def redraw_boundary(region):
 # snow_on = add_ndwi_ndsi(snow_on)
 
 # remake subregion geometries
-asset_subregions = asset_subregions.map( lambda f : redraw_boundary(f))
+# asset_subregions = asset_subregions.map( lambda f : redraw_boundary(f))
 
 #%%
 
@@ -230,12 +232,14 @@ for i in range(0, len(rgi_names)):
     # S2_images = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     S2_images = (ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
                       .filterDate(date_start, date_end) # filter by date range
+                      .filter(ee.filter.calendarRange(5, 12)) # filter by month
                       .filterBounds(rgi_i.geometry())
-                      .sort('system:time_start')) 
+                      .sort('system:time_start'))
     
     # add cloud probability image as property to images
     S2_clouds = (ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
                         .filterDate(date_start, date_end) # filter by date range
+                        .filter(ee.filter.calendarRange(5, 12)) # filter by month
                         .filterBounds(rgi_i.geometry())
                         .sort('system:time_start'))
     
