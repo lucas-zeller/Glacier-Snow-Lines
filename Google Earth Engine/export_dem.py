@@ -28,10 +28,10 @@ import numpy as np
 asset_rgi01_Alaska = ee.FeatureCollection('projects/lzeller/assets/01_rgi60_Alaska')
 
 # simple outline
-asset_simpleoutline = ee.FeatureCollection('projects/lzeller/assets/AGVAsimplearea')  # eventually redo this to be areas within 5km of rgi outlines >0.5km
-
+# asset_simpleoutline = ee.FeatureCollection('projects/lzeller/assets/AGVAsimplearea')  # eventually redo this to be areas within 5km of rgi outlines >0.5km
+# 
 # subregion outlines
-asset_subregions = ee.FeatureCollection('projects/lzeller/assets/Alaska_RGI_Subregions')
+asset_subregions = ee.FeatureCollection('projects/lzeller/assets/Alaska_RGI_Subregions_v2')
 
 
 
@@ -72,6 +72,8 @@ subregions_list = asset_subregions.toList(n_features+1)
 # now for each subregion or interest, clip single_image_clipped to that geometry and then export
 for i in range(0, len(names)):
     
+    if names[i] not in [153] : continue
+    
     # define folders, etc...
     # description = f'S2_{sensing_orbit_number:03d}_{date_start}_{date_end}'
     description10 = f'region_{names[i]:02d}_10m' 
@@ -106,8 +108,8 @@ for i in range(0, len(names)):
         skipEmptyTiles = True
         )
     
-    task.start()
-    print('DEM export started', f"{description10}")
+    # task.start()
+    # print('DEM export started', f"{description10}")
     
     # export the image to drive
     task = ee.batch.Export.image.toDrive(

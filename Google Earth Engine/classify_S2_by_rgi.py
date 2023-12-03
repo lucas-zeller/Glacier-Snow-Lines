@@ -14,19 +14,19 @@ import numpy as np
 
 
 #%%
-# # Trigger the authentication flow.
+# # # Trigger the authentication flow.
 # ee.Authenticate()
 
-# # Initialize the library.
-# ee.Initialize()
+# # # Initialize the library.
+ee.Initialize()
 
 #%%
 '''USER DEFINED VARIABLES'''
-run_id_export = 0
-run_cloudprob_export = 0
+# run_id_export = 0
+# run_cloudprob_export = 0
 save_metadata = 0
 run_cloudmasked_id_export = 0
-run_scl_export = 0 
+# run_scl_export = 0 
 
 
 date_start = '2018-01-01'
@@ -39,15 +39,25 @@ merge_dtis = 0
 # [1,14,15,28,29,42,43,57,71,72,85,86,100,101,114,115,128,129,143] # in numeric order
 # wolv: 43 and 143
 
+# open list of the validation glaciers, so we can run those first
+folder_AGVA = os.path.join('C:',os.sep,'Users','lzell','OneDrive - Colostate','Desktop',"AGVA")
+all_validation_df = pd.read_csv(os.path.join(folder_AGVA, 'Validation', 'Validation Glaciers.csv'))
+all_validation_rgi = list(all_validation_df['RGIId'].values)
+
 # rgi outlines
 asset_rgi01_Alaska = ee.FeatureCollection('projects/lzeller/assets/01_rgi60_Alaska')
 
 ### subset to the rgi outlines you want to use 
 # rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('Name',['Wolverine Glacier', 'Gulkana Glacier']))
 
+### check which ones we've already classified
+
 # rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('O2Region',["2"])) #wolv=region4, gulk=region2, brooks=1, peninsula=3
-rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('O2Region',["2","5","6"])) # need meta for 2,5,6
+rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('O2Region',["2","3","4","5","6"])) # need meta for 2,5,6
 rgi_to_use = rgi_to_use.filter(ee.Filter.gte('Area',2))
+
+# rgi_to_use = rgi_to_use.filter(ee.Filter.inList('RGIId',all_validation_rgi).Not())
+# rgi_to_use = rgi_to_use.filter(ee.Filter.inList('RGIId',all_validation_rgi))
 
 # rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.gte('Area',5))
 # rgi_to_use = asset_rgi01_Alaska.filter(ee.Filter.inList('RGIId',['RGI60-01.15588']))
@@ -142,31 +152,31 @@ def add_DN_bands(image):
 
 
 
-# function to return the geometry of a given orbit
-def mosaic_orbit_number_geom(orbit):
-    ic = ( ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-                  .filterDate('2020-01-01', '2020-02-01')
-                  .filterBounds(asset_simpleoutline) )
+# # function to return the geometry of a given orbit
+# def mosaic_orbit_number_geom(orbit):
+#     ic = ( ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+#                   .filterDate('2020-01-01', '2020-02-01')
+#                   .filterBounds(asset_simpleoutline) )
     
-    subset_ic = ic.filter(ee.Filter.eq("SENSING_ORBIT_NUMBER",orbit))
-    orbit_geom = subset_ic.geometry().dissolve()#.intersection(asset_subregions)
+#     subset_ic = ic.filter(ee.Filter.eq("SENSING_ORBIT_NUMBER",orbit))
+#     orbit_geom = subset_ic.geometry().dissolve()#.intersection(asset_subregions)
   
-    # make it into a feature and return
-    feature = ee.Feature(orbit_geom, {"SENSING_ORBIT_NUMBER":orbit})
+#     # make it into a feature and return
+#     feature = ee.Feature(orbit_geom, {"SENSING_ORBIT_NUMBER":orbit})
   
-    return feature
+#     return feature
 
-# function to return the geometry of a given image collection
-def get_ic_geometry(ic):
-    return ic.geometry().dissolve()
+# # function to return the geometry of a given image collection
+# def get_ic_geometry(ic):
+#     return ic.geometry().dissolve()
 
-# function to redraw subregion boundaries to bbox of glacier within them (to limit size)
-def redraw_boundary(region):
-    subset_rgi = asset_rgi01_Alaska.filterBounds(region.geometry())
-    subset_bounds = subset_rgi.map( lambda f : f.setGeometry(f.geometry().bounds()) )
-    subset_bounds = subset_bounds.geometry().bounds()
+# # function to redraw subregion boundaries to bbox of glacier within them (to limit size)
+# def redraw_boundary(region):
+#     subset_rgi = asset_rgi01_Alaska.filterBounds(region.geometry())
+#     subset_bounds = subset_rgi.map( lambda f : f.setGeometry(f.geometry().bounds()) )
+#     subset_bounds = subset_bounds.geometry().bounds()
     
-    return region.setGeometry(subset_bounds)
+#     return region.setGeometry(subset_bounds)
 
 # # rename the snow-on bands
 # snow_on = renameBandsS2(snow_on)
@@ -186,16 +196,41 @@ n_features = len(rgi_names)
 
 rgi_list = rgi_to_use.toList(n_features) 
 
+### get list of the ones which have already been classified
+folder = os.path.join('G:',os.sep,'My Drive','AGVA Snow Lines',"S2_Classified_Cloudmasked_Raw")
+all_images = os.listdir(folder)
+all_rgis_done = list(set( [i[3:17] for i in all_images] ))
+print("We have already IDed:",len(all_rgis_done))
+print("This order is asking for:", n_features)
+print()
+print("This order should end up running:",n_features-len(all_rgis_done))
+print("There should be",len(all_rgis_done),'duplicates')
+print()
+
+# print(all_rgis_done[0])
+# print(rgi_names[0])
+# print("We are identifying this many duplicates:",len(done))
+
+#%%
+
 # now for each subregion or interest, clip single_image_clipped to that geometry and then export
 # skip=1
+done = []
+tt = 0
 for i in range(0, len(rgi_names)):
-    
-    # grab this feature
-    rgi_i = ee.Feature(rgi_list.get(i)) 
-    # print(rgi_i.getInfo())
     
     # get rgi name
     rgi_name = rgi_names[i]
+    
+    # if it's already been run, then skip it
+    if rgi_name in all_rgis_done:
+        done.append(rgi_name)
+        continue
+    else:
+        tt+=1
+    # grab this feature
+    rgi_i = ee.Feature(rgi_list.get(i)) 
+    # print(rgi_i.getInfo())
     
     # various ways to skip to certain glaciers
     # if rgi_name == "RGI60-01.18971": skip=0
@@ -225,21 +260,22 @@ for i in range(0, len(rgi_names)):
     folder_scl = 'S2_SCL_Raw'
     folder_masked = 'S2_Classified_Cloudmasked_Raw'
     
-    if run_cloudmasked_id_export or run_id_export or run_cloudprob_export or save_metadata or run_scl_export:
+    if run_cloudmasked_id_export or save_metadata:
         print(f"\n{i} of {len(rgi_names)} : {rgi_name}")
+        # if i<445: continue
     
     # Load image collection which we will want to classify
     # S2_images = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     S2_images = (ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
                       .filterDate(date_start, date_end) # filter by date range
-                      .filter(ee.filter.calendarRange(5, 12)) # filter by month
+                      .filter(ee.Filter.calendarRange(5, 11, 'month')) # filter by month
                       .filterBounds(rgi_i.geometry())
                       .sort('system:time_start'))
     
     # add cloud probability image as property to images
     S2_clouds = (ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY')
                         .filterDate(date_start, date_end) # filter by date range
-                        .filter(ee.filter.calendarRange(5, 12)) # filter by month
+                        .filter(ee.Filter.calendarRange(5, 11, 'month')) # filter by month
                         .filterBounds(rgi_i.geometry())
                         .sort('system:time_start'))
     
@@ -252,6 +288,7 @@ for i in range(0, len(rgi_names)):
         })))
     
     # get a list of all the datatake_identifiers (individual pass overs) that there are
+    # these will be used for metadata later on
     if merge_dtis:
         dtis = S2_images.aggregate_array("DATATAKE_IDENTIFIER").distinct()
     else:
@@ -320,59 +357,37 @@ for i in range(0, len(rgi_names)):
     # collapse the classified image collection into a single, multi-band image
     single_image = s2_swaths.toBands()
     
+    # clip, sort out the mask number, etc...
     single_image = single_image.set({'dtis':dtis}) # set the list of dtis as a property
     single_image = single_image.unmask(99) # set masked pixels to 99
     single_image = single_image.clip(rgi_i.geometry()).unmask(99) # clip to rgi outline
     
-    if run_id_export:
-        # export the image to drive
-        task = ee.batch.Export.image.toDrive(
-            image = single_image, #regional_clipped_image,
-            region = rgi_i.geometry(), # region.bounds()
-            folder = folder_img,
-            scale = 10,
-            maxPixels = int(1e13),
-            crs = 'EPSG:3338',
-            crsTransform = [10,0,0,0,-10,0],
-            description = description,
-            skipEmptyTiles = True
-            )
+    # if run_id_export:
+    #     # export the image to drive
+    #     task = ee.batch.Export.image.toDrive(
+    #         image = single_image, #regional_clipped_image,
+    #         region = rgi_i.geometry(), # region.bounds()
+    #         folder = folder_img,
+    #         scale = 10,
+    #         maxPixels = int(1e13),
+    #         crs = 'EPSG:3338',
+    #         crsTransform = [10,0,0,0,-10,0],
+    #         description = description,
+    #         skipEmptyTiles = True
+    #         )
         
-        task.start()
-        print('Classified image stack export started')#, f"{description}")
+    #     task.start()
+    #     print('Classified image stack export started')#, f"{description}")
         
         
-    # run cloud probability export for this glacier if you want
-    
-         
+    ### run cloud probability export for this glacier if you want   
     # apply function to grab SCL from each image
     S2_cloud_probs = S2_clouds.map( lambda i : get_cloud_prob(i))
     
-    # function to merge SCLs that have the same DATATAKE_IDENTIFIER
-    def mosaic_DTI_scl(dti):
-        # subset to only this dti
-        subset_ic = S2_SCLs.filter(ee.Filter.eq("DATATAKE_IDENTIFIER",dti))
-        
-        # mosaic them
-        mosaic = subset_ic.mosaic()
-        
-        # rename the band to dti value
-        mosaic = mosaic.rename([ee.String(dti).slice(0,-3)])
-        
-        # you can copy properties over to the mosaiced image, and it will be stored in the image properties.
-        mosaic = mosaic.set({"DATATAKE_IDENTIFIER":dti})
-      
-        return mosaic
-    
-    # merge SCLs by dti
-    if merge_dtis:
-        s2_swaths = ee.ImageCollection(dtis.map( lambda d : mosaic_DTI_scl(d)) )
-    else:
-        s2_swaths = S2_cloud_probs # test not doing the swath merging
-    
     # collapse the classified image collection into a single, multi-band image
-    single_image_cloud = s2_swaths.toBands()
+    single_image_cloud = S2_cloud_probs.toBands()
     
+    # clip, sort out masking etc...
     single_image_cloud = single_image_cloud.set({'dtis':dtis}) # set the list of dtis as a property
     single_image_cloud = single_image_cloud.unmask(199) # set masked pixels to 99
     single_image_cloud = single_image_cloud.clip(rgi_i.geometry()).unmask(199) # clip to rgi outline
@@ -380,22 +395,22 @@ for i in range(0, len(rgi_names)):
     # round down to nearest 10 and export
     # single_image_cloud = single_image_cloud.add(5).divide(10).round().toInt8()
     
-    if run_cloudprob_export:
-        # export the image to drive
-        task = ee.batch.Export.image.toDrive(
-            image = single_image_cloud, #regional_clipped_image,
-            region = rgi_i.geometry(), # region.bounds()
-            folder = folder_cloud,
-            scale = 10,
-            maxPixels = int(1e13),
-            crs = 'EPSG:3338',
-            crsTransform = [10,0,0,0,-10,0],
-            description = description_cloud,
-            skipEmptyTiles = True
-            )
+    # if run_cloudprob_export:
+    #     # export the image to drive
+    #     task = ee.batch.Export.image.toDrive(
+    #         image = single_image_cloud, #regional_clipped_image,
+    #         region = rgi_i.geometry(), # region.bounds()
+    #         folder = folder_cloud,
+    #         scale = 10,
+    #         maxPixels = int(1e13),
+    #         crs = 'EPSG:3338',
+    #         crsTransform = [10,0,0,0,-10,0],
+    #         description = description_cloud,
+    #         skipEmptyTiles = True
+    #         )
         
-        task.start()
-        print('Cloud Probability image stack export started')#, f"{description_cloud}")
+    #     task.start()
+    #     print('Cloud Probability image stack export started')#, f"{description_cloud}")
          
     if run_cloudmasked_id_export:
         cloud_mask = single_image_cloud.lte(20) # this will make pixels less than 20% of clouds "True"
@@ -418,55 +433,55 @@ for i in range(0, len(rgi_names)):
         print('Classified image stack export started')
         
     # run scl export for this glacier if you want
-    if run_scl_export:
+    # if run_scl_export:
         
-        # apply function to grab SCL from each image
-        S2_SCLs = S2_images.map( lambda i : get_SCL(i))
+    #     # apply function to grab SCL from each image
+    #     S2_SCLs = S2_images.map( lambda i : get_SCL(i))
         
-        # function to merge SCLs that have the same DATATAKE_IDENTIFIER
-        def mosaic_DTI_scl(dti):
-            # subset to only this dti
-            subset_ic = S2_SCLs.filter(ee.Filter.eq("DATATAKE_IDENTIFIER",dti))
+    #     # function to merge SCLs that have the same DATATAKE_IDENTIFIER
+    #     def mosaic_DTI_scl(dti):
+    #         # subset to only this dti
+    #         subset_ic = S2_SCLs.filter(ee.Filter.eq("DATATAKE_IDENTIFIER",dti))
             
-            # mosaic them
-            mosaic = subset_ic.mosaic()
+    #         # mosaic them
+    #         mosaic = subset_ic.mosaic()
             
-            # rename the band to dti value
-            mosaic = mosaic.rename([ee.String(dti).slice(0,-3)])
+    #         # rename the band to dti value
+    #         mosaic = mosaic.rename([ee.String(dti).slice(0,-3)])
             
-            # you can copy properties over to the mosaiced image, and it will be stored in the image properties.
-            mosaic = mosaic.set({"DATATAKE_IDENTIFIER":dti})
+    #         # you can copy properties over to the mosaiced image, and it will be stored in the image properties.
+    #         mosaic = mosaic.set({"DATATAKE_IDENTIFIER":dti})
           
-            return mosaic
+    #         return mosaic
         
-        # merge SCLs by dti
-        if merge_dtis:
-            s2_swaths = ee.ImageCollection(dtis.map( lambda d : mosaic_DTI_scl(d)) )
-        else:
-            s2_swaths = S2_SCLs # test not doing the swath merging
+    #     # merge SCLs by dti
+    #     if merge_dtis:
+    #         s2_swaths = ee.ImageCollection(dtis.map( lambda d : mosaic_DTI_scl(d)) )
+    #     else:
+    #         s2_swaths = S2_SCLs # test not doing the swath merging
         
-        # collapse the classified image collection into a single, multi-band image
-        single_image = s2_swaths.toBands()
+    #     # collapse the classified image collection into a single, multi-band image
+    #     single_image = s2_swaths.toBands()
         
-        single_image = single_image.set({'dtis':dtis}) # set the list of dtis as a property
-        single_image = single_image.unmask(99) # set masked pixels to 99
-        single_image = single_image.clip(rgi_i.geometry()).unmask(99) # clip to rgi outline
+    #     single_image = single_image.set({'dtis':dtis}) # set the list of dtis as a property
+    #     single_image = single_image.unmask(99) # set masked pixels to 99
+    #     single_image = single_image.clip(rgi_i.geometry()).unmask(99) # clip to rgi outline
         
-        # export the image to drive
-        task = ee.batch.Export.image.toDrive(
-            image = single_image, #regional_clipped_image,
-            region = rgi_i.geometry(), # region.bounds()
-            folder = folder_scl,
-            scale = 10,
-            maxPixels = int(1e13),
-            crs = 'EPSG:3338',
-            crsTransform = [10,0,0,0,-10,0],
-            description = description_scl,
-            skipEmptyTiles = True
-            )
+    #     # export the image to drive
+    #     task = ee.batch.Export.image.toDrive(
+    #         image = single_image, #regional_clipped_image,
+    #         region = rgi_i.geometry(), # region.bounds()
+    #         folder = folder_scl,
+    #         scale = 10,
+    #         maxPixels = int(1e13),
+    #         crs = 'EPSG:3338',
+    #         crsTransform = [10,0,0,0,-10,0],
+    #         description = description_scl,
+    #         skipEmptyTiles = True
+    #         )
         
-        task.start()
-        print('SCL image stack export started')#, f"{description_scl}")
+    #     task.start()
+    #     print('SCL image stack export started')#, f"{description_scl}")
         
         
     if save_metadata:
@@ -482,6 +497,8 @@ for i in range(0, len(rgi_names)):
         out_df.to_csv(out_path)
         print('Metadata exported to local machine')
         
+print("This order will actually end up running:",tt)
+print("We have identified this many duplicates:",len(done))
         #%%
     
         
