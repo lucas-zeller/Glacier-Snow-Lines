@@ -114,7 +114,7 @@ for i in range(0, len(rgi_names)):
     # if it's already been run, then skip it
     if rgi_name in all_rgis_done:
         done.append(rgi_name)
-        # continue
+        continue
     else:
         tt+=1
     # grab this feature
@@ -150,7 +150,7 @@ for i in range(0, len(rgi_names)):
     folder_masked = 'S2_Classified_Cloudmasked_Raw'
     
     if run_shadow_export:
-        if i<2977: continue
+        # if i<2977: continue
         print(f"{i} of {len(rgi_names)} : {rgi_name}")
         
     
