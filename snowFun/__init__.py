@@ -14,6 +14,7 @@ from xml.dom import minidom
 from shapely.geometry import box
 import matplotlib.pyplot as plt
 import time
+import cartopy.crs as ccrs
 
 def test():
     print('test')
@@ -729,7 +730,7 @@ def sample_dem_along_line(snowline, xr_dem, increment=20):
 
 
 # function to create a single-frame base map, and return the figure and axis 
-def create_base_map(width=6.5, height=5, hillshade=0):
+def create_base_map(width=6.5, height=5, hillshade=0, projection=None, closeup=None):
     
     # define folder and file paths
     folder_AGVA = os.path.join('C:',os.sep,'Users','lzell','OneDrive - Colostate','Desktop',"AGVA")
@@ -758,6 +759,15 @@ def create_base_map(width=6.5, height=5, hillshade=0):
     xtick_labels = xticks/1000000
     ytick_labels = yticks/1000000
     
+    # if you want it even more close up
+    if closeup:
+        xlims = (-150000, 1600000)
+        ylims = (800000, 1580000)
+        xticks = np.arange(0,1500001,300000)
+        yticks = np.arange(900000,1500001,300000)
+        xtick_labels = xticks/1000000
+        ytick_labels = yticks/1000000
+    
     # create non-ocean (land) geometry
     if hillshade:
         not_ocean = box(*box(xlims[0], ylims[0], xlims[1], ylims[1]).buffer(50000).bounds)
@@ -772,7 +782,7 @@ def create_base_map(width=6.5, height=5, hillshade=0):
                                           y=slice(ylims[1]+5000, ylims[0]-5000))
     
     # initiate figure
-    fig,axs = plt.subplots(figsize=(width,height), dpi=300)
+    fig,axs = plt.subplots(figsize=(width,height), dpi=300, subplot_kw={'projection': projection})
     
     # add background hillshade
     if hillshade:
@@ -782,10 +792,10 @@ def create_base_map(width=6.5, height=5, hillshade=0):
     ocean.plot(ax=axs, color='cornflowerblue', alpha=0.3, zorder=1.2)
     
     if hillshade:
-        not_ocean.plot(ax=axs, color='white', alpha=0.5, zorder=1.3)
+        not_ocean.plot(ax=axs, color='white', alpha=0.7, zorder=1.3)
     
     # add usa and canada boundaries
-    boundary_lines.plot(ax=axs, color='black', linewidth=0.2, zorder=1.4)
+    boundary_lines.plot(ax=axs, color='black', linewidth=0.3, zorder=1.4)
     
     # add ocean boundary outline
     ocean.boundary.plot(ax=axs, color='black', linewidth=0.5, alpha=1, zorder=1.35)
@@ -799,12 +809,12 @@ def create_base_map(width=6.5, height=5, hillshade=0):
     axs.set_yticks(yticks)
     axs.set_xticklabels(xtick_labels)
     axs.set_yticklabels(ytick_labels, rotation=90, va='center')
-    axs.tick_params(axis="x", pad=3, direction="in", width=1, labelsize=6, zorder=2)
-    axs.tick_params(axis="y" ,pad=1, direction="in", width=1, labelsize=6, zorder=2)
+    axs.tick_params(axis="x", pad=2, direction="in", width=1, labelsize=5, zorder=2)
+    axs.tick_params(axis="y" ,pad=1, direction="in", width=1, labelsize=5, zorder=2)
     
     # set axis labels
-    axs.set_xlabel(r'Easting ($ \times 10^6$ m)', size=6)
-    axs.set_ylabel(r'Northing ($ \times 10^6$ m)', size=6)
+    axs.set_xlabel(r'Easting ($ \times 10^6$ m)', size=5, labelpad=0)
+    axs.set_ylabel(r'Northing ($ \times 10^6$ m)', size=5, labelpad=0)
     plt.title("")
     
     plt.tight_layout()
@@ -905,6 +915,268 @@ def create_annual_base_maps(width=6.5, height=3.25, hillshade=0):
     return (fig, axs)
 
 
+# function to create a 6-frame base map, but rotated to 3 rows, 2 columns
+def create_annual_base_maps_rotate(width=6.5, height=5.8, hillshade=0):
+    
+    # define folder and file paths
+    folder_AGVA = os.path.join('C:',os.sep,'Users','lzell','OneDrive - Colostate','Desktop',"AGVA")
+    folder_plotting = os.path.join(folder_AGVA, 'Plotting')
+    
+    path_bounds = os.path.join(folder_plotting, "usa_can_boundaries", "boundary_lines.shp")
+    boundary_lines = gpd.read_file(path_bounds)
+    
+    # open ocean shapefile
+    path_ocean = os.path.join(folder_plotting, 'ne_10m_ocean', 'ne_10m_ocean.shp')
+    ocean = gpd.read_file(path_ocean).to_crs("EPSG:3338")
+    
+    # # define the extent of the plots.
+    # plot_buffer = 100000
+    # plot_bounds = rgi_gdf.geometry.total_bounds
+    # xlims = ( int(plot_bounds[0]-plot_buffer) , int(plot_bounds[2]+plot_buffer) )
+    # ylims = ( int(plot_bounds[1]-plot_buffer) , int(plot_bounds[3]+plot_buffer) )
+    
+    # manual override because I want to cut out some of the alaska peninsula
+    xlims = (-450000, 1661000)
+    ylims = (500000, 1652000)
+    
+    # define what the x and y ticks are going to be
+    xticks = np.arange(-300000,1500001,300000)
+    yticks = np.arange(600000,1500001,300000)
+    xtick_labels = xticks/1000000
+    ytick_labels = yticks/1000000
+    
+    # create non-ocean (land) geometry
+    if hillshade:
+        not_ocean = box(*box(xlims[0], ylims[0], xlims[1], ylims[1]).buffer(50000).bounds)
+        not_ocean = not_ocean.difference(ocean["geometry"].values[0])
+        not_ocean = gpd.GeoSeries( [not_ocean], crs=ocean.crs )
+    
+    # open background hillshade, if wanted
+    if hillshade:
+        path_ne = os.path.join(folder_plotting, 'GRAY_HR_SR_OB', 'GRAY_HR_SR_OB_AA_500m.tif') 
+        ne_background = riox.open_rasterio(path_ne)
+        ne_background = ne_background.sel(x=slice(xlims[0]-5000, xlims[1]+5000),
+                                          y=slice(ylims[1]+5000, ylims[0]-5000))
+    
+    # initiate figure
+    fig,axs = plt.subplots(3,2, figsize=(width,height), dpi=300)
+    
+    for ax in axs:
+        for a in ax:
+            # add background hillshade
+            if hillshade:
+                ne_background.plot(ax=a, cmap='gray', vmin=-100, vmax=200, add_colorbar=False, zorder=1)
+            
+            # add colored shapes overlaying the ocean and land
+            ocean.plot(ax=a, color='cornflowerblue', alpha=0.3, zorder=1.2)
+            
+            if hillshade:
+                not_ocean.plot(ax=a, color='white', alpha=0.5, zorder=1.3)
+            
+            # add usa and canada boundaries
+            boundary_lines.plot(ax=a, color='black', linewidth=0.1, zorder=1.4)
+            
+            # add ocean boundary outline
+            ocean.boundary.plot(ax=a, color='black', linewidth=0.2, alpha=1, zorder=1.35)
+            
+            # set axis limits
+            a.set_xlim(xlims)
+            a.set_ylim(ylims)
+            
+            # set axis ticks, format marks inwards
+            a.set_xticks([])
+            a.set_yticks([])
+            a.set_xticklabels([])
+            a.set_yticklabels([])
+            # a.tick_params(axis="x", pad=3, direction="in", width=1, labelsize=6, zorder=2)
+            # a.tick_params(axis="y" ,pad=1, direction="in", width=1, labelsize=6, zorder=2)
+            
+            # set axis labels
+            a.set_xlabel("")
+            a.set_ylabel("")
+            
+    axs[0,0].set_title('2018', size='6', pad=0)
+    axs[0,1].set_title('2019', size='6', pad=0)
+    axs[1,0].set_title('2020', size='6', pad=0)
+    axs[1,1].set_title('2021', size='6', pad=0)
+    axs[2,0].set_title('2022', size='6', pad=0)
+    axs[2,1].set_title('Avg', size='6', pad=0)
+    
+    # plt.title("")
+    plt.tight_layout()
+    
+    return (fig, axs)
+
+
+# function to create a 4-frame base map, and return the figure and axes
+def create_three_base_maps(width=6.5, height=3.8, hillshade=0):
+    
+    # define folder and file paths
+    folder_AGVA = os.path.join('C:',os.sep,'Users','lzell','OneDrive - Colostate','Desktop',"AGVA")
+    folder_plotting = os.path.join(folder_AGVA, 'Plotting')
+    
+    path_bounds = os.path.join(folder_plotting, "usa_can_boundaries", "boundary_lines.shp")
+    boundary_lines = gpd.read_file(path_bounds)
+    
+    # open ocean shapefile
+    path_ocean = os.path.join(folder_plotting, 'ne_10m_ocean', 'ne_10m_ocean.shp')
+    ocean = gpd.read_file(path_ocean).to_crs("EPSG:3338")
+    
+    # # define the extent of the plots.
+    # plot_buffer = 100000
+    # plot_bounds = rgi_gdf.geometry.total_bounds
+    # xlims = ( int(plot_bounds[0]-plot_buffer) , int(plot_bounds[2]+plot_buffer) )
+    # ylims = ( int(plot_bounds[1]-plot_buffer) , int(plot_bounds[3]+plot_buffer) )
+    
+    # manual override because I want to cut out some of the alaska peninsula
+    xlims = (-450000, 1661000)
+    ylims = (500000, 1652000)
+    
+    # define what the x and y ticks are going to be
+    xticks = np.arange(-300000,1500001,300000)
+    yticks = np.arange(600000,1500001,300000)
+    xtick_labels = xticks/1000000
+    ytick_labels = yticks/1000000
+    
+    # create non-ocean (land) geometry
+    if hillshade:
+        not_ocean = box(*box(xlims[0], ylims[0], xlims[1], ylims[1]).buffer(50000).bounds)
+        not_ocean = not_ocean.difference(ocean["geometry"].values[0])
+        not_ocean = gpd.GeoSeries( [not_ocean], crs=ocean.crs )
+    
+    # open background hillshade, if wanted
+    if hillshade:
+        path_ne = os.path.join(folder_plotting, 'GRAY_HR_SR_OB', 'GRAY_HR_SR_OB_AA_500m.tif') 
+        ne_background = riox.open_rasterio(path_ne)
+        ne_background = ne_background.sel(x=slice(xlims[0]-5000, xlims[1]+5000),
+                                          y=slice(ylims[1]+5000, ylims[0]-5000))
+    
+    # initiate figure
+    fig,axs = plt.subplots(2,2, figsize=(width,height), dpi=300)
+    
+    for a in [axs[0,1], axs[1,1], axs[1,0]]:
+    
+        # add background hillshade
+        if hillshade:
+            ne_background.plot(ax=a, cmap='gray', vmin=-100, vmax=200, add_colorbar=False, zorder=1)
+
+        # add colored shapes overlaying the ocean and land
+        ocean.plot(ax=a, color='cornflowerblue', alpha=0.3, zorder=1.2)
+
+        if hillshade:
+            not_ocean.plot(ax=a, color='white', alpha=0.5, zorder=1.3)
+
+        # add usa and canada boundaries
+        boundary_lines.plot(ax=a, color='black', linewidth=0.1, zorder=1.4)
+
+        # add ocean boundary outline
+        ocean.boundary.plot(ax=a, color='black', linewidth=0.2, alpha=1, zorder=1.35)
+
+        # set axis limits
+        a.set_xlim(xlims)
+        a.set_ylim(ylims)
+
+        # set axis ticks, format marks inwards
+        a.set_xticks([])
+        a.set_yticks([])
+        a.set_xticklabels([])
+        a.set_yticklabels([])
+        # a.tick_params(axis="x", pad=3, direction="in", width=1, labelsize=6, zorder=2)
+        # a.tick_params(axis="y" ,pad=1, direction="in", width=1, labelsize=6, zorder=2)
+
+        # set axis labels
+        a.set_xlabel("")
+        a.set_ylabel("")
+    
+    # plt.title("")
+    plt.tight_layout()
+    
+    return (fig, axs)
+
+
+def create_three_base_maps_row(width=6.5, height=2.5, hillshade=0, projection=None):
+    
+    # define folder and file paths
+    folder_AGVA = os.path.join('C:',os.sep,'Users','lzell','OneDrive - Colostate','Desktop',"AGVA")
+    folder_plotting = os.path.join(folder_AGVA, 'Plotting')
+    
+    path_bounds = os.path.join(folder_plotting, "usa_can_boundaries", "boundary_lines.shp")
+    boundary_lines = gpd.read_file(path_bounds)
+    
+    # open ocean shapefile
+    path_ocean = os.path.join(folder_plotting, 'ne_10m_ocean', 'ne_10m_ocean.shp')
+    ocean = gpd.read_file(path_ocean).to_crs("EPSG:3338")
+    
+    # # define the extent of the plots.
+    # plot_buffer = 100000
+    # plot_bounds = rgi_gdf.geometry.total_bounds
+    # xlims = ( int(plot_bounds[0]-plot_buffer) , int(plot_bounds[2]+plot_buffer) )
+    # ylims = ( int(plot_bounds[1]-plot_buffer) , int(plot_bounds[3]+plot_buffer) )
+    
+    # manual override because I want to cut out some of the alaska peninsula
+    xlims = (-450000, 1661000)
+    ylims = (500000, 1652000)
+    
+    # define what the x and y ticks are going to be
+    xticks = np.arange(-300000,1500001,300000)
+    yticks = np.arange(600000,1500001,300000)
+    xtick_labels = xticks/1000000
+    ytick_labels = yticks/1000000
+    
+    # create non-ocean (land) geometry
+    if hillshade:
+        not_ocean = box(*box(xlims[0], ylims[0], xlims[1], ylims[1]).buffer(50000).bounds)
+        not_ocean = not_ocean.difference(ocean["geometry"].values[0])
+        not_ocean = gpd.GeoSeries( [not_ocean], crs=ocean.crs )
+    
+    # open background hillshade, if wanted
+    if hillshade:
+        path_ne = os.path.join(folder_plotting, 'GRAY_HR_SR_OB', 'GRAY_HR_SR_OB_AA_500m.tif') 
+        ne_background = riox.open_rasterio(path_ne)
+        ne_background = ne_background.sel(x=slice(xlims[0]-5000, xlims[1]+5000),
+                                          y=slice(ylims[1]+5000, ylims[0]-5000))
+    
+    # initiate figure
+    fig,axs = plt.subplots(1,3, figsize=(width,height), dpi=300, subplot_kw={'projection': projection})
+    
+    for a in axs:
+    
+        # add background hillshade
+        if hillshade:
+            ne_background.plot(ax=a, cmap='gray', vmin=-100, vmax=200, add_colorbar=False, zorder=1)
+
+        # add colored shapes overlaying the ocean and land
+        ocean.plot(ax=a, color='cornflowerblue', alpha=0.3, zorder=1.2)
+
+        if hillshade:
+            not_ocean.plot(ax=a, color='white', alpha=0.5, zorder=1.3)
+
+        # add usa and canada boundaries
+        boundary_lines.plot(ax=a, color='black', linewidth=0.1, zorder=1.4)
+
+        # add ocean boundary outline
+        ocean.boundary.plot(ax=a, color='black', linewidth=0.2, alpha=1, zorder=1.35)
+
+        # set axis limits
+        a.set_xlim(xlims)
+        a.set_ylim(ylims)
+
+        # set axis ticks, format marks inwards
+        a.set_xticks([])
+        a.set_yticks([])
+        a.set_xticklabels([])
+        a.set_yticklabels([])
+        # a.tick_params(axis="x", pad=3, direction="in", width=1, labelsize=6, zorder=2)
+        # a.tick_params(axis="y" ,pad=1, direction="in", width=1, labelsize=6, zorder=2)
+
+        # set axis labels
+        a.set_xlabel("")
+        a.set_ylabel("")
+    
+    # plt.title("")
+    plt.tight_layout()
+    
+    return (fig, axs)
 
 
 
